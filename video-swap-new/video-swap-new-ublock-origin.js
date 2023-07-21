@@ -533,44 +533,44 @@ twitch-videoad.js text/javascript
     function onContentLoaded() {
         // This stops Twitch from pausing the player when in another tab and an ad shows.
         // Taken from https://github.com/saucettv/VideoAdBlockForTwitch/blob/cefce9d2b565769c77e3666ac8234c3acfe20d83/chrome/content.js#L30
-        try {
-            Object.defineProperty(document, 'visibilityState', {
-                get() {
-                    return 'visible';
-                }
-            });
-        }catch{}
-        try {
-            Object.defineProperty(document, 'hidden', {
-                get() {
-                    return false;
-                }
-            });
-        }catch{}
-        var block = e => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-        };
-        document.addEventListener('visibilitychange', block, true);
-        document.addEventListener('webkitvisibilitychange', block, true);
-        document.addEventListener('mozvisibilitychange', block, true);
-        document.addEventListener('hasFocus', block, true);
-        try {
-            if (/Firefox/.test(navigator.userAgent)) {
-                Object.defineProperty(document, 'mozHidden', {
-                    get() {
-                        return false;
-                    }
-                });
-            } else {
-                Object.defineProperty(document, 'webkitHidden', {
-                    get() {
-                        return false;
-                    }
-                });
-            }
-        }catch{}
+        //try {
+        //    Object.defineProperty(document, 'visibilityState', {
+        //        get() {
+        //            return 'visible';
+        //        }
+        //    });
+        //}catch{}
+        //try {
+        //    Object.defineProperty(document, 'hidden', {
+        //        get() {
+        //            return false;
+        //        }
+        //    });
+        //}catch{}
+        //var block = e => {
+        //    e.preventDefault();
+        //    e.stopPropagation();
+        //    e.stopImmediatePropagation();
+        //};
+        //document.addEventListener('visibilitychange', block, true);
+        //document.addEventListener('webkitvisibilitychange', block, true);
+        //document.addEventListener('mozvisibilitychange', block, true);
+        //document.addEventListener('hasFocus', block, true);
+        //try {
+        //    if (/Firefox/.test(navigator.userAgent)) {
+        //        Object.defineProperty(document, 'mozHidden', {
+        //            get() {
+        //                return false;
+        //            }
+        //        });
+        //    } else {
+        //        Object.defineProperty(document, 'webkitHidden', {
+        //            get() {
+        //                return false;
+        //            }
+        //        });
+        //    }
+        //}catch{}
         // Hooks for preserving volume / resolution
         var keysToCache = [
             'video-quality',
