@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (video-swap-new)
 // @namespace    https://github.com/pixeltris/TwitchAdSolutions
-// @version      1.20
+// @version      1.23
 // @updateURL    https://github.com/pixeltris/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @downloadURL  https://github.com/pixeltris/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @description  Multiple solutions for blocking Twitch ads (video-swap-new)
 // @author       pixeltris
 // @match        *://*.twitch.tv/*
 // @run-at       document-start
+// @inject-into  page
 // @grant        none
 // ==/UserScript==
 (function() {
@@ -163,11 +164,27 @@
                 var streamM3u8Response = await realFetch(streamM3u8Url);
                 if (streamM3u8Response.status == 200) {
                     var streamM3u8 = await streamM3u8Response.text();
-                    if (streamM3u8 != null && !streamM3u8.includes(AD_SIGNIFIER)) {
-                        console.log('No more ads on main stream. Triggering player reload to go back to main stream...');
-                        streamInfo.UseBackupStream = false;
-                        postMessage({key:'UboHideAdBanner'});
-                        postMessage({key:'UboReloadPlayer'});
+                    if (streamM3u8 != null) {
+                        if (!streamM3u8.includes(AD_SIGNIFIER)) {
+                            console.log('No more ads on main stream. Triggering player reload to go back to main stream...');
+                            streamInfo.UseBackupStream = false;
+                            postMessage({key:'UboHideAdBanner'});
+                            postMessage({key:'UboReloadPlayer'});
+                        } else if (!streamM3u8.includes('"MIDROLL"') && !streamM3u8.includes('"midroll"')) {
+                            var lines = streamM3u8.replace('\r', '').split('\n');
+                            for (var i = 0; i < lines.length; i++) {
+                                var line = lines[i];
+                                if (line.startsWith('#EXTINF') && lines.length > i + 1) {
+                                    if (!line.includes(LIVE_SIGNIFIER) && !streamInfo.RequestedAds.has(lines[i + 1])) {
+                                        // Only request one .ts file per .m3u8 request to avoid making too many requests
+                                        //console.log('Fetch ad .ts file');
+                                        streamInfo.RequestedAds.add(lines[i + 1]);
+                                        fetch(lines[i + 1]).then((response)=>{response.blob()});
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -222,6 +239,7 @@
                             var useBackupStream = false;
                             if (streamInfo == null || streamInfo.Encodings == null || streamInfo.BackupEncodings == null) {
                                 StreamInfos[channelName] = streamInfo = {
+                                    RequestedAds: new Set(),
                                     Encodings: null,
                                     BackupEncodings: null,
                                     IsMidroll: false,
@@ -260,6 +278,32 @@
                                                 return;
                                             }
                                         } else {
+                                            var lowResLines = encodingsM3u8.replace('\r', '').split('\n');
+                                            var lowResBestUrl = null;
+                                            for (var j = 0; j < lowResLines.length; j++) {
+                                                if (lowResLines[j].startsWith('#EXT-X-STREAM-INF')) {
+                                                    var res = parseAttributes(lowResLines[j])['RESOLUTION'];
+                                                    if (res && lowResLines[j + 1].endsWith('.m3u8')) {
+                                                        // Assumes resolutions are correctly ordered
+                                                        lowResBestUrl = lowResLines[j + 1];
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            if (lowResBestUrl != null && streamInfo.Encodings != null) {
+                                                var normalEncodingsM3u8 = streamInfo.Encodings;
+                                                var normalLines = normalEncodingsM3u8.replace('\r', '').split('\n');
+                                                for (var j = 0; j < normalLines.length - 1; j++) {
+                                                    if (normalLines[j].startsWith('#EXT-X-STREAM-INF')) {
+                                                        var res = parseAttributes(normalLines[j])['RESOLUTION'];
+                                                        if (res) {
+                                                            lowResBestUrl += ' ';// The stream doesn't load unless each url line is unique
+                                                            normalLines[j + 1] = lowResBestUrl;
+                                                        }
+                                                    }
+                                                }
+                                                encodingsM3u8 = normalLines.join('\r\n');
+                                            }
                                             streamInfo.BackupEncodings = encodingsM3u8;
                                         }
                                         var lines = encodingsM3u8.replace('\r', '').split('\n');
@@ -325,7 +369,7 @@
     }
     function gqlRequest(body, realFetch) {
         if (ClientIntegrityHeader == null) {
-            console.warn('ClientIntegrityHeader is null');
+            //console.warn('ClientIntegrityHeader is null');
             //throw 'ClientIntegrityHeader is null';
         }
         var fetchFunc = realFetch ? realFetch : fetch;
@@ -451,17 +495,21 @@
                         }
                         if (typeof init.headers['Client-Integrity'] === 'string') {
                             ClientIntegrityHeader = init.headers['Client-Integrity'];
-                            twitchMainWorker.postMessage({
-                                key: 'UpdateClientIntegrityHeader',
-                                value: init.headers['Client-Integrity']
-                            });
+                            if (ClientIntegrityHeader && twitchMainWorker) {
+                                twitchMainWorker.postMessage({
+                                    key: 'UpdateClientIntegrityHeader',
+                                    value: init.headers['Client-Integrity']
+                                });
+                            }
                         }
                         if (typeof init.headers['Authorization'] === 'string') {
                             AuthorizationHeader = init.headers['Authorization'];
-                            twitchMainWorker.postMessage({
-                                key: 'UpdateAuthorizationHeader',
-                                value: init.headers['Authorization']
-                            });
+                            if (AuthorizationHeader && twitchMainWorker) {
+                                twitchMainWorker.postMessage({
+                                    key: 'UpdateAuthorizationHeader',
+                                    value: init.headers['Authorization']
+                                });
+                            }
                         }
                     }
                 }
@@ -487,11 +535,21 @@
             }
             return null;
         }
-        var reactRootNode = null;
-        var rootNode = document.querySelector('#root');
-        if (rootNode && rootNode._reactRootContainer && rootNode._reactRootContainer._internalRoot && rootNode._reactRootContainer._internalRoot.current) {
-            reactRootNode = rootNode._reactRootContainer._internalRoot.current;
+        function findReactRootNode() {
+            var reactRootNode = null;
+            var rootNode = document.querySelector('#root');
+            if (rootNode && rootNode._reactRootContainer && rootNode._reactRootContainer._internalRoot && rootNode._reactRootContainer._internalRoot.current) {
+                reactRootNode = rootNode._reactRootContainer._internalRoot.current;
+            }
+            if (reactRootNode == null) {
+                var containerName = Object.keys(rootNode).find(x => x.startsWith('__reactContainer'));
+                if (containerName != null) {
+                    reactRootNode = rootNode[containerName];
+                }
+            }
+            return reactRootNode;
         }
+        var reactRootNode = findReactRootNode();
         if (!reactRootNode) {
             console.log('Could not find react root');
             return;
@@ -507,7 +565,7 @@
             console.log('Could not find player state');
             return;
         }
-        if (player.paused) {
+        if (player.paused || player.core?.paused) {
             return;
         }
         if (isSeek) {
@@ -522,22 +580,25 @@
             player.play();
             return;
         }
-        const sink = player.mediaSinkManager || (player.core ? player.core.mediaSinkManager : null);
-        if (sink && sink.video && sink.video._ffz_compressor) {
-            const video = sink.video;
-            const volume = video.volume ? video.volume : player.getVolume();
-            const muted = player.isMuted();
-            const newVideo = document.createElement('video');
-            newVideo.volume = muted ? 0 : volume;
-            newVideo.playsInline = true;
-            video.replaceWith(newVideo);
-            player.attachHTMLVideoElement(newVideo);
-            setImmediate(() => {
-                player.setVolume(volume);
-                player.setMuted(muted);
-            });
+        const lsKeyQuality = 'video-quality';
+        const lsKeyMuted = 'video-muted';
+        const lsKeyVolume = 'volume';
+        var currentQualityLS = localStorage.getItem(lsKeyQuality);
+        var currentMutedLS = localStorage.getItem(lsKeyMuted);
+        var currentVolumeLS = localStorage.getItem(lsKeyVolume);
+        if (player?.core?.state) {
+            localStorage.setItem(lsKeyMuted, JSON.stringify({default:player.core.state.muted}));
+            localStorage.setItem(lsKeyVolume, player.core.state.volume);
         }
-        playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });// ffz sets this false
+        if (player?.core?.state?.quality?.group) {
+            localStorage.setItem(lsKeyQuality, JSON.stringify({default:player.core.state.quality.group}));
+        }
+        playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
+        setTimeout(() => {
+            localStorage.setItem(lsKeyQuality, currentQualityLS);
+            localStorage.setItem(lsKeyMuted, currentMutedLS);
+            localStorage.setItem(lsKeyVolume, currentVolumeLS);
+        }, 3000);
     }
     window.reloadTwitchPlayer = reloadTwitchPlayer;
     hookFetch();
