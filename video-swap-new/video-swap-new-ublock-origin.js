@@ -814,62 +814,6 @@ twitch-videoad.js text/javascript
         }, 3000);
     }
     function onContentLoaded() {
-        // This stops Twitch from pausing the player when in another tab and an ad shows.
-        // Taken from https://github.com/saucettv/VideoAdBlockForTwitch/blob/cefce9d2b565769c77e3666ac8234c3acfe20d83/chrome/content.js#L30
-        try {
-            Object.defineProperty(document, 'visibilityState', {
-                get() {
-                    return 'visible';
-                }
-            });
-        }catch{}
-        let hidden = document.__lookupGetter__('hidden');
-        let webkitHidden = document.__lookupGetter__('webkitHidden');
-        try {
-            Object.defineProperty(document, 'hidden', {
-                get() {
-                    return false;
-                }
-            });
-        }catch{}
-        var block = e => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-        };
-        let wasVideoPlaying = true;
-        var visibilityChange = e => {
-            if (typeof chrome !== 'undefined') {
-                const videos = document.getElementsByTagName('video');
-                if (videos.length > 0) {
-                    if (hidden.apply(document) === true || (webkitHidden && webkitHidden.apply(document) === true)) {
-                        wasVideoPlaying = !videos[0].paused && !videos[0].ended;
-                    } else if (wasVideoPlaying && !videos[0].ended) {
-                        videos[0].play();
-                    }
-                }
-            }
-            block(e);
-        };
-        document.addEventListener('visibilitychange', visibilityChange, true);
-        document.addEventListener('webkitvisibilitychange', visibilityChange, true);
-        document.addEventListener('mozvisibilitychange', visibilityChange, true);
-        document.addEventListener('hasFocus', block, true);
-        try {
-            if (/Firefox/.test(navigator.userAgent)) {
-                Object.defineProperty(document, 'mozHidden', {
-                    get() {
-                        return false;
-                    }
-                });
-            } else {
-                Object.defineProperty(document, 'webkitHidden', {
-                    get() {
-                        return false;
-                    }
-                });
-            }
-        }catch{}
         // Hooks for preserving volume / resolution
         var keysToCache = [
             'video-quality',
